@@ -3,10 +3,13 @@
 import React, { useState } from 'react';
 import { Play, Filter, Search, Clock, Star, TrendingUp, Calendar } from 'lucide-react';
 import Image from 'next/image';
+import { useMovies } from '@/hooks/useMovies';
+import { getImageUrl, Movie } from '@/services/tmdb';
 
-const categories = ['All', 'Basketball', 'Football', 'Soccer', 'Combat', 'eSports', 'Tennis', 'Golf', 'Olympics'];
+const categories = ['Basketball', 'Football', 'Soccer', 'Combat', 'eSports', 'Tennis', 'Golf', 'Olympics'];
 
-const mockContent = [
+// Keep mockContent for featured section
+const featuredContent = [
   {
     id: 1,
     title: "The Last Dance",
@@ -19,28 +22,6 @@ const mockContent = [
     featured: true
   },
   {
-    id: 2,
-    title: "Super Bowl Classics",
-    category: "Football",
-    duration: "2h 30m",
-    rating: 4.8,
-    views: "980K",
-    thumbnail: "https://images.unsplash.com/photo-1566577739112-5180d4bf9390?auto=format&fit=crop&q=80",
-    new: false,
-    featured: true
-  },
-  {
-    id: 3,
-    title: "Champions League Final 2023",
-    category: "Soccer",
-    duration: "1h 45m",
-    rating: 4.7,
-    views: "2.1M",
-    thumbnail: "https://images.unsplash.com/photo-1522778526097-ce0a22ceb253?auto=format&fit=crop&q=80",
-    new: true,
-    featured: false
-  },
-  {
     id: 4,
     title: "UFC Greatest Fights",
     category: "Combat",
@@ -51,45 +32,27 @@ const mockContent = [
     new: false,
     featured: true
   },
-  {
-    id: 5,
-    title: "Wimbledon Highlights",
-    category: "Tennis",
-    duration: "45m",
-    rating: 4.6,
-    views: "750K",
-    thumbnail: "https://images.unsplash.com/photo-1599586120429-48281b6f0ece?auto=format&fit=crop&q=80",
-    new: true,
-    featured: false
-  },
-  {
-    id: 6,
-    title: "LoL World Championship",
-    category: "eSports",
-    duration: "4h",
-    rating: 4.8,
-    views: "3.2M",
-    thumbnail: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80",
-    new: true,
-    featured: true
-  }
 ];
 
 export default function Library() {
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('Basketball');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'rating'>('popular');
+  
+  // Fetch movies based on selected category
+  const { movies, isLoading, error } = useMovies(selectedCategory === 'All' ? 'sports' : selectedCategory);
 
-  const filteredContent = mockContent
-    .filter(item => 
-      (selectedCategory === 'All' || item.category === selectedCategory) &&
-      (item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       item.category.toLowerCase().includes(searchQuery.toLowerCase()))
+  // Filter and sort movies
+  const filteredMovies = movies
+    .filter(movie => 
+      movie.title.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
-      if (sortBy === 'popular') return parseInt(b.views) - parseInt(a.views);
-      if (sortBy === 'rating') return b.rating - a.rating;
-      if (sortBy === 'newest') return b.new ? 1 : -1;
+      if (sortBy === 'popular') return b.popularity - a.popularity;
+      if (sortBy === 'rating') return b.vote_average - a.vote_average;
+      if (sortBy === 'newest') {
+        return new Date(b.release_date).getTime() - new Date(a.release_date).getTime();
+      }
       return 0;
     });
 
@@ -170,31 +133,65 @@ export default function Library() {
             <span>Featured Content</span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {mockContent.filter(item => item.featured).slice(0, 2).map(item => (
+            {featuredContent.map(item => (
               <FeaturedCard key={item.id} {...item} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Content Grid */}
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold flex items-center space-x-2">
-          {sortBy === 'popular' && <TrendingUp className="w-6 h-6 text-blue-500" />}
-          {sortBy === 'newest' && <Calendar className="w-6 h-6 text-green-500" />}
-          {sortBy === 'rating' && <Star className="w-6 h-6 text-yellow-500" />}
-          <span>{
-            sortBy === 'popular' ? 'Popular Now' :
-            sortBy === 'newest' ? 'Latest Additions' :
-            'Top Rated'
-          }</span>
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filteredContent.map(item => (
-            <ContentCard key={item.id} {...item} />
-          ))}
+      {/* Loading State */}
+      {isLoading && (
+        <div className="py-20 text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-xl">Loading {selectedCategory} documentaries...</p>
         </div>
-      </div>
+      )}
+
+      {/* Error State */}
+      {error && !isLoading && (
+        <div className="py-20 text-center">
+          <div className="bg-red-500/20 p-6 rounded-xl">
+            <h3 className="text-xl font-bold text-red-500 mb-2">Error Loading Content</h3>
+            <p>{error.message}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Content Grid */}
+      {!isLoading && !error && filteredMovies.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold flex items-center space-x-2">
+            {sortBy === 'popular' && <TrendingUp className="w-6 h-6 text-blue-500" />}
+            {sortBy === 'newest' && <Calendar className="w-6 h-6 text-green-500" />}
+            {sortBy === 'rating' && <Star className="w-6 h-6 text-yellow-500" />}
+            <span>{
+              sortBy === 'popular' ? 'Popular Now' :
+              sortBy === 'newest' ? 'Latest Additions' :
+              'Top Rated'
+            }</span>
+            <span className="text-gray-400 text-lg font-normal">({filteredMovies.length} movies)</span>
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filteredMovies.map(movie => (
+              <MovieCard key={movie.id} movie={movie} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No Results */}
+      {!isLoading && !error && filteredMovies.length === 0 && (
+        <div className="py-20 text-center">
+          <p className="text-xl">No documentaries found for {selectedCategory}.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -248,49 +245,59 @@ function FeaturedCard({ title, category, duration, thumbnail, rating, views, new
   );
 }
 
-function ContentCard({ title, category, duration, thumbnail, rating, views, new: isNew }: {
-  title: string;
-  category: string;
-  duration: string;
-  thumbnail: string;
-  rating: number;
-  views: string;
-  new: boolean;
-}) {
+function MovieCard({ movie }: { movie: Movie }) {
+  // Format the release date
+  const releaseDate = movie.release_date ? new Date(movie.release_date).getFullYear() : 'Unknown';
+  
+  // Format the duration (since API doesn't provide duration, use a placeholder)
+  const duration = '1h 30m';
+  
+  // Get a short overview
+  const shortOverview = movie.overview 
+    ? movie.overview.length > 80 
+      ? `${movie.overview.substring(0, 80)}...` 
+      : movie.overview
+    : 'No description available';
+  
   return (
-    <div className="bg-gray-800 rounded-xl overflow-hidden group cursor-pointer hover:transform hover:scale-105 transition-all duration-300">
-      <div className="relative aspect-video">
+    <div className="relative group cursor-pointer rounded-xl overflow-hidden bg-gray-800 h-full transition-transform hover:scale-[1.02]">
+      <div className="aspect-[2/3] relative">
         <Image 
-          src={thumbnail} 
-          alt={title} 
+          src={getImageUrl(movie.poster_path)} 
+          alt={movie.title} 
           fill
           style={{ objectFit: 'cover' }}
         />
-        {isNew && (
-          <div className="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded-md text-xs font-medium">
-            NEW
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+      </div>
+      <div className="absolute inset-0 p-3 flex flex-col justify-end">
+        <div className="space-y-1">
+          <h3 className="text-sm font-bold line-clamp-2">{movie.title}</h3>
+          <div className="flex items-center space-x-2 text-xs text-gray-300">
+            <span className="flex items-center space-x-1">
+              <Star className="w-3 h-3 text-yellow-500" />
+              <span>{movie.vote_average.toFixed(1)}</span>
+            </span>
+            <span>{releaseDate}</span>
           </div>
-        )}
-        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-          <button className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-full transform hover:scale-110 transition-transform">
-            <Play className="w-5 h-5" />
-          </button>
         </div>
       </div>
-      <div className="p-4">
-        <div className="flex justify-between items-start">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <div className="flex items-center text-yellow-500">
-            <Star className="w-4 h-4 mr-1" />
-            <span className="text-sm">{rating}</span>
-          </div>
-        </div>
-        <div className="flex justify-between text-gray-400 text-sm mt-1">
-          <span>{category}</span>
-          <span className="flex items-center">
-            <Clock className="w-3 h-3 mr-1" />
-            {duration}
+      {/* Additional information displayed on hover */}
+      <div className="absolute inset-0 bg-gray-900/90 p-3 flex flex-col opacity-0 group-hover:opacity-100 transition-opacity overflow-y-auto">
+        <h3 className="text-sm font-bold mb-1">{movie.title}</h3>
+        <p className="text-xs text-gray-300 mb-2">{shortOverview}</p>
+        <div className="flex items-center space-x-2 text-xs mb-2">
+          <span className="flex items-center space-x-1">
+            <Star className="w-3 h-3 text-yellow-500" />
+            <span>{movie.vote_average.toFixed(1)}</span>
           </span>
+          <span>{releaseDate}</span>
+        </div>
+        <div className="mt-auto">
+          <button className="bg-blue-500 hover:bg-blue-600 text-white w-full py-1.5 rounded-full flex items-center justify-center space-x-1 text-xs">
+            <Play className="w-3 h-3" />
+            <span>Watch</span>
+          </button>
         </div>
       </div>
     </div>
